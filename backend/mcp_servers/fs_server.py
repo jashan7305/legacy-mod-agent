@@ -7,7 +7,7 @@ from mcp.server.stdio import stdio_server
 from mcp import types
 
 from config import REPOS_DIR
-print(REPOS_DIR)
+# print(REPOS_DIR)
 
 app = Server("filesystem")
 
