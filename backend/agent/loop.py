@@ -13,47 +13,80 @@ from agent.mcp_client import mcp_client_manager
 SYSTEM = """
 You are a senior software engineer modernising a legacy codebase.
 
-Your process — follow it strictly, never skip a step:
+CRITICAL CONSTRAINT: The sandbox has no internet access, so dependency
+installation will always fail. Because of this, your approach differs
+by language:
+
+- PYTHON: You can fully refactor AND write/run tests, since the sandbox
+  has Python's standard library plus a baseline of common packages
+  pre-installed. Verify your work with real test execution.
+
+- JAVASCRIPT / TYPESCRIPT / RUST: Do NOT attempt to run tests or install
+  dependencies — this will always fail offline. Instead, focus entirely
+  on documentation and static analysis: produce clear docstrings/JSDoc/
+  rustdoc comments, a debt assessment, and a written explanation of
+  suggested refactors. Do not modify the actual logic of these files —
+  only add documentation and report findings. Never claim tests passed
+  for non-Python code.
+
+Your process — follow it strictly:
+
+0.  call detect_language on "/" to identify the primary language(s)
+    and file count for the repo.
 
 1.  call list_files on "/" to understand the repo layout.
-2.  call detect_language on "/" to identify the primary language and file count.
-3.  read_file the most important source files — skip migrations, configs,
-    __init__.py, lock files, and auto-generated files.
-4.  call extract_ast on the most complex-looking source file.
-5.  Reason about the technical debt in that file based on the AST output
-    and what you read. Identify the single highest-debt file to refactor.
-6.  Write a fully refactored version of that file using write_file:
-      - Type annotations on every function signature
-      - Named constants replacing all magic numbers and strings
-      - Functions longer than 30 lines split into smaller focused ones
-      - Google-style docstrings on every function and class
-      - Dead code removed
-      - Deprecated APIs replaced with modern equivalents
-7.  Write a test file using write_file. Place it in tests/ (create the
-    directory if it does not exist). Tests must cover every public function
-    in the refactored file.
-8.  call run_bash to install dependencies and run the tests.
-    Use the suggested test command from extract_ast output.
-    Example: cd /tmp/repos/{job_id} && pip install -e . -q && pytest tests/ -v
-9.  If tests fail: read the error, fix the code or the tests, run_bash again.
-    Maximum 3 retries. If still failing after 3 retries, proceed to step 10
-    and note the failures clearly in the PR body.
-10. Before opening a PR: call create_branch to create a new branch
-    (e.g. "modernise-filename") from the default branch. Then call
-    push_files or create_or_update_file to commit your refactored file(s)
-    and test file to that new branch.
-11. call create_pull_request with:
-      - head: the branch name you just created
+
+2.  IF the primary language is Python:
+    a. read_file the most important source files (skip migrations,
+       configs, __init__.py, lock files, auto-generated files).
+    b. call extract_ast on the most complex file.
+    c. call list_available_dependencies to see what's installable —
+       prefer refactoring a file whose imports are all available.
+    d. Write a fully refactored version using write_file:
+         - Type annotations on every function signature
+         - Named constants replacing magic numbers/strings
+         - Functions >30 lines split into smaller ones
+         - Google-style docstrings on every function and class
+         - Dead code removed
+    e. Write a pytest test file using write_file.
+    f. call run_bash to run the tests. If they fail for reasons other
+       than missing packages, fix and retry (max 3 attempts).
+
+3.  IF the primary language is JavaScript, TypeScript, or Rust:
+    a. read_file the most important source files.
+    b. call extract_ast on the 2-3 most complex files.
+    c. For each file: write a documentation-only patch using write_file —
+       add JSDoc (/** ... */) for JS/TS or rustdoc (///) comments above
+       every function and class, explaining purpose, parameters, return
+       values, and any non-obvious behavior. DO NOT change any logic.
+    d. Write a single markdown file (e.g. DEBT_REPORT.md) summarising:
+         - Technical debt findings per file (complexity, dead code,
+           missing types, anti-patterns)
+         - Suggested refactors, described in prose — do not implement them
+         - A note that tests could not be run in this environment
+
+4.  Before opening a PR: call create_branch (e.g. "agent-docs-{job_id}"
+    for doc-only work, or "agent-refactor-{job_id}" for Python refactors)
+    from the default branch. Then push your changes with push_files or
+    create_or_update_file.
+
+5.  call create_pull_request with:
+      - head: the branch you just created
       - base: the repo's default branch (usually "main" or "master")
-      - A clear title and a markdown body listing every change made.
-12. call done with a one-paragraph summary of everything completed.
+      - title: clearly state whether this is a refactor+tests PR (Python)
+        or a documentation-only PR (JS/TS/Rust)
+      - body: list every file touched and what was done to it. For
+        Python, mention test results. For JS/TS/Rust, explicitly state
+        "Documentation only — no logic changes, tests not run."
+
+6.  call done with a one-paragraph summary.
 
 Rules:
-- Always read a file before writing it.
-- Never modify a test file after its tests pass.
+- Never modify the actual logic of JS, TypeScript, or Rust files — comments
+  and a separate markdown report only.
+- Never claim a test passed unless you actually ran it via run_bash and
+  saw it pass.
 - Be concise in your reasoning — every token costs quota.
-- If the repo has no tests/ directory, create it.
-- Always use the test command suggested by extract_ast for the detected language.
 """
 
 
@@ -162,6 +195,7 @@ async def run_agent(
         max_steps        = 40
         test_retries     = 0
         no_tool_strikes  = 0
+        is_branch_created = False
 
         # main loop
         for step in range(max_steps):
@@ -227,6 +261,9 @@ async def run_agent(
                                 "\n\n[agent notice] Maximum test retries reached. "
                                 "Proceed to open a PR and note the failing tests in the PR body."
                             )
+                
+                if name == "create_branch" and not is_branch_created and "error" not in result.lower():
+                    is_branch_created = True
 
                 if name == "create_pull_request":
                     urls = re.findall(r'https://github\.com/[^\s"\']+/pull/\d+', result)
@@ -248,5 +285,31 @@ async def run_agent(
 
         # max steps reached, done not called
         emit_log(job_id, f"[loop] max steps ({max_steps}) reached without completion.")
-        await update_job(job_id, status="failed",
-                         summary=f"Agent did not complete within {max_steps} steps.")
+        if is_branch_created:
+            fallback_pr_result = await mcp.call_tool("create_pull_request", {
+                "title": "refactor: partial modernisation (agent ran out of steps)",
+                "body": (
+                    "This PR was opened automatically after the agent reached its "
+                    "step limit before calling `done`. The changes below reflect "
+                    "whatever work was completed up to that point and may be "
+                    "incomplete or untested.\n\n"
+                    f"Job ID: {job_id}"
+                ),
+            })
+            emit_log(job_id, f"[fallback] attempted PR creation: {fallback_pr_result[:300]}")
+
+            import re
+            urls = re.findall(r'https://github\.com/[^\s"\']+/pull/\d+', fallback_pr_result)
+            pr_url = urls[0] if urls else None
+            if pr_url:
+                emit_log(job_id, f"[fallback] PR opened: {pr_url}")
+
+            await update_job(
+                job_id,
+                status="failed",
+                summary=f"Agent did not complete within {max_steps} steps. Partial work was committed.",
+                pr_url=pr_url,
+            )
+        else:
+            await update_job(job_id, status="failed",
+                            summary=f"Agent did not complete within {max_steps} steps.")
