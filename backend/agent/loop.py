@@ -92,7 +92,7 @@ async def run_agent(
     update_job,
     save_file_result,
 ):
-    limiter = RateLimiter(min_gap_seconds=6.5)
+    limiter = RateLimiter(min_gap_seconds=20)
     client  = genai.Client(api_key=GEMINI_API_KEY)
 
     async with mcp_client_manager() as mcp:
@@ -136,7 +136,7 @@ async def run_agent(
             emit_log(job_id, "[debug] Tool object created OK")
 
             chat = client.chats.create(
-                model="gemini-2.5-flash",
+                model="gemini-3.1-flash-lite",
                 config=genai_types.GenerateContentConfig(
                     system_instruction=SYSTEM.format(job_id=job_id),
                     tools=[gemini_tool],
