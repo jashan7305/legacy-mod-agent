@@ -38,11 +38,15 @@ Your process — follow it strictly, never skip a step:
 9.  If tests fail: read the error, fix the code or the tests, run_bash again.
     Maximum 3 retries. If still failing after 3 retries, proceed to step 10
     and note the failures clearly in the PR body.
-10. call create_pull_request with:
-      - A clear title: "refactor: modernise <filename>"
-      - A markdown body listing every change made, debt score reasoning,
-        and any outstanding test failures if applicable.
-11. call done with a one-paragraph summary of everything completed.
+10. Before opening a PR: call create_branch to create a new branch
+    (e.g. "modernise-filename") from the default branch. Then call
+    push_files or create_or_update_file to commit your refactored file(s)
+    and test file to that new branch.
+11. call create_pull_request with:
+      - head: the branch name you just created
+      - base: the repo's default branch (usually "main" or "master")
+      - A clear title and a markdown body listing every change made.
+12. call done with a one-paragraph summary of everything completed.
 
 Rules:
 - Always read a file before writing it.

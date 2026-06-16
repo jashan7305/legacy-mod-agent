@@ -29,13 +29,25 @@ async def list_tools() -> list[types.Tool]:
                 },
                 "required": ["command"],
             },
-        )
+        ),
+        types.Tool(
+            name="list_installed_packages",
+            description=(
+                "List all Python packages pre-installed in the sandbox environment. "
+                "ALWAYS call this before writing any refactored code or tests — "
+                "the sandbox has no internet access, so you can only use packages "
+                "that appear in this list plus the Python standard library."
+            ),
+            inputSchema={"type": "object", "properties": {}},
+        ),
     ]
 
 @app.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
     if name == "run_bash":
         result = _run_bash(arguments["command"])
+    elif name == "list_installed_packages":
+        result = _run_bash("pip list --format=freeze")
     else:
         result = f"unknown tool: {name}"
     return [types.TextContent(type="text", text=result)]

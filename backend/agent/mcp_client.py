@@ -98,15 +98,14 @@ class MCPClientManager:
                 )
 
     async def stop(self):
-        """Cleanly shut down all sessions and subprocesses."""
         for session in self._sessions.values():
             try:
-                await session.__aexit__(None, None, None)
+                await asyncio.wait_for(session.__aexit__(None, None, None), timeout=5)
             except Exception:
                 pass
         for cm in reversed(self._cms):
             try:
-                await cm.__aexit__(None, None, None)
+                await asyncio.wait_for(cm.__aexit__(None, None, None), timeout=5)
             except Exception:
                 pass
 
