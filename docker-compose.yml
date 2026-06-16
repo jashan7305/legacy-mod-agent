@@ -1,0 +1,72 @@
+services:
+  api:
+    build: ./backend
+    command: >
+      sh -c "cd /app && uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
+    env_file: .env
+    environment:
+      - PYTHONPATH=/app
+    volumes:
+      - ./backend:/app
+      - repos:/tmp/repos
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  worker:
+    build: ./backend
+    command: >
+      sh -c "cd /app && uv run celery -A worker.tasks worker --loglevel=info --concurrency=1"
+    env_file: .env
+    environment:
+      - PYTHONPATH=/app
+    volumes:
+      - ./backend:/app
+      - repos:/tmp/repos
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  sandbox:
+    build: ./sandbox
+    container_name: legacy-mod-agent-sandbox
+    network_mode: none
+    volumes:
+      - repos:/tmp/repos
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./frontend:/usr/share/nginx/html:ro
+    depends_on:
+      - api
+
+  postgres:
+    image: postgres:16-alpine
+    env_file: .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+
+volumes:
+  repos:
+  pgdata:

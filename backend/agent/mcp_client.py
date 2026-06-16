@@ -9,6 +9,8 @@ from mcp.client.stdio import stdio_client
 
 from config import GITHUB_TOKEN
 
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 def _server_configs() -> list[tuple[str, StdioServerParameters]]:
     python = sys.executable
 
@@ -18,6 +20,8 @@ def _server_configs() -> list[tuple[str, StdioServerParameters]]:
             StdioServerParameters(
                 command=python,
                 args=["-m", "mcp_servers.fs_server"],
+                cwd=PROJECT_ROOT,
+                env=os.environ.copy()
             ),
         ),
         (
@@ -25,6 +29,8 @@ def _server_configs() -> list[tuple[str, StdioServerParameters]]:
             StdioServerParameters(
                 command=python,
                 args=["-m", "mcp_servers.bash_server"],
+                cwd=PROJECT_ROOT,
+                env=os.environ.copy()
             ),
         ),
         (
@@ -32,6 +38,8 @@ def _server_configs() -> list[tuple[str, StdioServerParameters]]:
             StdioServerParameters(
                 command=python,
                 args=["-m", "mcp_servers.ast_server"],
+                cwd=PROJECT_ROOT,
+                env=os.environ.copy()
             ),
         ),
         (

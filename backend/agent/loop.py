@@ -1,6 +1,7 @@
 import asyncio
 import json
 import re
+import subprocess
 
 from google import genai
 from google.genai import types as genai_types
@@ -52,72 +53,102 @@ Rules:
 """
 
 
+_UNSUPPORTED_SCHEMA_KEYS = {"$schema", "$id", "additionalProperties", "definitions", "$defs"}
+
+
+def _sanitize_schema(schema: dict) -> dict:
+    """Recursively strip JSON Schema metadata keys that Gemini's
+    FunctionDeclaration rejects, while preserving the actual
+    type/properties/required structure it needs."""
+    if not isinstance(schema, dict):
+        return schema
+
+    cleaned = {
+        k: _sanitize_schema(v) if isinstance(v, dict) else
+           ([_sanitize_schema(i) for i in v] if isinstance(v, list) else v)
+        for k, v in schema.items()
+        if k not in _UNSUPPORTED_SCHEMA_KEYS
+    }
+    return cleaned
+
+
 def _mcp_schema_to_genai(schema: dict) -> genai_types.FunctionDeclaration:
     """Convert an MCP tool schema into a google-genai FunctionDeclaration."""
+    parameters = _sanitize_schema(schema["parameters"]) if schema["parameters"] else {
+        "type": "object",
+        "properties": {},
+    }
     return genai_types.FunctionDeclaration(
         name=        schema["name"],
         description= schema["description"],
-        parameters=  schema["parameters"] or {"type": "object", "properties": {}},
+        parameters=  parameters,
     )
 
 
 async def run_agent(
-    repo_url:         str,
-    job_id:           str,
+    repo_url: str,
+    job_id: str,
     emit_log,
     update_job,
     save_file_result,
 ):
-    limiter = RateLimiter(min_gap_seconds=6.5) # rate limiter
-    client  = genai.Client(api_key=GEMINI_API_KEY) 
+    limiter = RateLimiter(min_gap_seconds=6.5)
+    client  = genai.Client(api_key=GEMINI_API_KEY)
 
     async with mcp_client_manager() as mcp:
+        try:
+            emit_log(job_id, f"[mcp] servers online: {mcp.connected_servers}")
+            emit_log(job_id, f"[mcp] tools available: {[t['name'] for t in mcp.tool_schemas]}")
 
-        emit_log(job_id, f"[mcp] servers online: {mcp.connected_servers}")
-        emit_log(job_id, f"[mcp] tools available: {[t['name'] for t in mcp.tool_schemas]}")
+            emit_log(job_id, f"[init] cloning {repo_url}")
+            clone_url = f"https://{GITHUB_TOKEN}@{repo_url.replace('https://', '')}"
+            clone_proc = subprocess.run(
+                ["git", "clone", "--depth", "1", clone_url, f"{REPOS_DIR}/{job_id}"],
+                capture_output=True, text=True, timeout=120,
+            )
+            clone_result = clone_proc.stdout + clone_proc.stderr
+            emit_log(job_id, f"[init] {clone_result[:300]}")
 
-        # clone the repo
-        emit_log(job_id, f"[init] cloning {repo_url}")
-        clone_cmd = (
-            f"git clone --depth 1 "
-            f"https://{GITHUB_TOKEN}@{repo_url.replace('https://', '')} "
-            f"/tmp/repos/{job_id} 2>&1"
-        )
-        clone_result = await mcp.call_tool("run_bash", {"command": clone_cmd})
-        emit_log(job_id, f"[init] {clone_result[:300]}")
-        if "fatal" in clone_result.lower() or "error" in clone_result.lower():
-            await update_job(job_id, status="failed", summary=f"Clone failed: {clone_result}")
-            return
+            if clone_proc.returncode != 0:
+                await update_job(job_id, status="failed", summary=f"Clone failed: {clone_result}")
+                return
 
-        await update_job(job_id, status="running")
+            await update_job(job_id, status="running")
 
-        all_schemas = mcp.tool_schemas + [
-            {
-                "name":        "done",
+            emit_log(job_id, "[debug] building tool declarations...")
+            all_schemas = mcp.tool_schemas + [{
+                "name": "done",
                 "description": "Signal that the modernisation task is fully complete.",
                 "parameters": {
                     "type": "object",
-                    "properties": {
-                        "summary": {
-                            "type":        "string",
-                            "description": "One-paragraph summary of all changes made.",
-                        }
-                    },
+                    "properties": {"summary": {"type": "string", "description": "One-paragraph summary."}},
                     "required": ["summary"],
                 },
-            }
-        ]
-        function_declarations = [_mcp_schema_to_genai(s) for s in all_schemas]
-        gemini_tool = genai_types.Tool(function_declarations=function_declarations)
+            }]
 
-        # create a chat session with system prompts and all tools available
-        chat = client.chats.create(
-            model="gemini-2.5-flash",
-            config=genai_types.GenerateContentConfig(
-                system_instruction=SYSTEM.format(job_id=job_id),
-                tools=[gemini_tool],
-            ),
-        )
+            for s in all_schemas:
+                emit_log(job_id, f"[debug] schema: {s['name']}")
+
+            function_declarations = [_mcp_schema_to_genai(s) for s in all_schemas]
+            emit_log(job_id, "[debug] tool declarations built OK")
+
+            gemini_tool = genai_types.Tool(function_declarations=function_declarations)
+            emit_log(job_id, "[debug] Tool object created OK")
+
+            chat = client.chats.create(
+                model="gemini-2.5-flash",
+                config=genai_types.GenerateContentConfig(
+                    system_instruction=SYSTEM.format(job_id=job_id),
+                    tools=[gemini_tool],
+                ),
+            )
+            emit_log(job_id, "[debug] chat session created OK")
+        except Exception as e:
+            import traceback
+            emit_log(job_id, f"[debug] EXCEPTION before/during setup: {type(e).__name__}: {e}")
+            emit_log(job_id, f"[debug] traceback:\n{traceback.format_exc()}")
+            await update_job(job_id, status="failed", summary=f"{type(e).__name__}: {e}")
+            return
 
         message = (
             f"The repository has been cloned to /tmp/repos/{job_id}. "
