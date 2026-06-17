@@ -339,8 +339,7 @@ async def run_agent(
                 no_tool_strikes += 1
                 if no_tool_strikes >= 3:
                     emit_log(job_id, "[loop] 3 consecutive turns with no tool call — stopping.")
-                    await update_job(job_id, status="failed",
-                                     summary="Agent stopped producing tool calls.")
+                    await update_job(job_id, status="failed", summary="Agent stopped producing tool calls.")
                     return
                 message = (
                     "You did not call a tool. "
@@ -362,13 +361,20 @@ async def run_agent(
                 if name == "done":
                     summary = args.get("summary", "")
                     if not is_branch_created:
-                        emit_log(job_id, "[guard] done called but no branch was ever created via the GitHub MCP tool — overriding to failed.")
-                        await update_job(
-                            job_id,
-                            status="failed",
-                            summary=f"Agent claimed completion but never created a branch via the GitHub tool, so no PR exists. Original summary: {summary}",
+                        emit_log(job_id, "[guard] done called but no branch was ever created via the GitHub MCP tool.")
+                        result = (
+                            "BLOCKED: You called done, but you have NOT created a branch "
+                            "or opened a PR yet. Your file changes exist only locally and "
+                            "are not saved anywhere reviewable. You MUST now call "
+                            "create_branch, then push_files with all your changed files, "
+                            "then create_pull_request. Do this now — do not call done again "
+                            "until create_pull_request has succeeded."
                         )
-                        return
+                        emit_log(job_id, f"← {result}")
+                        function_response_parts.append(
+                            genai_types.Part.from_function_response(name=name, response={"result": result})
+                        )
+                        continue
                     emit_log(job_id, f"[done] {summary}")
                     await update_job(job_id, status="complete", summary=summary)
                     return
@@ -378,12 +384,11 @@ async def run_agent(
                     useless_git_cmds = ["git checkout -b", "git commit", "git push", "git branch"]
                     if any(cmd in cmd_text for cmd in useless_git_cmds):
                         result = (
-                            "BLOCKED: You called done, but you have NOT created a branch "
-                            "or opened a PR yet. Your file changes exist only locally and "
-                            "are not saved anywhere reviewable. You MUST now call "
-                            "create_branch, then push_files with all your changed files, "
-                            "then create_pull_request. Do this now — do not call done again "
-                            "until create_pull_request has succeeded."
+                            "BLOCKED: You attempted to run a git command that creates branches or "
+                            "commits. These commands do NOT reach GitHub and are useless in this "
+                            "sandbox. You MUST use the create_branch and push_files MCP tools "
+                            "instead. Do not call done until you have successfully created a branch, "
+                            "pushed your files, and opened a PR."
                         )
                         emit_log(job_id, f"← {result}")
                         function_response_parts.append(
@@ -503,5 +508,4 @@ async def run_agent(
                 pr_url=pr_url,
             )
         else:
-            await update_job(job_id, status="failed",
-                            summary=f"Agent did not complete within {max_steps} steps.")
+            await update_job(job_id, status="failed", summary=f"Agent did not complete within {max_steps} steps.")

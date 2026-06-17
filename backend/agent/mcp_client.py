@@ -100,12 +100,16 @@ class MCPClientManager:
     async def stop(self):
         for session in self._sessions.values():
             try:
-                await asyncio.wait_for(session.__aexit__(None, None, None), timeout=5)
+                await asyncio.wait_for(session.__aexit__(None, None, None), timeout=30)
+            except asyncio.CancelledError:
+                pass
             except Exception:
                 pass
         for cm in reversed(self._cms):
             try:
-                await asyncio.wait_for(cm.__aexit__(None, None, None), timeout=5)
+                await asyncio.wait_for(cm.__aexit__(None, None, None), timeout=30)
+            except asyncio.CancelledError:
+                pass
             except Exception:
                 pass
 
