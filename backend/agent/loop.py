@@ -163,24 +163,22 @@ B4. Append findings to a single shared markdown file (create it if it
 STEP 2 — SHIP
 ═══════════════════════════════════════════════════════════════════════════
 
-2a. call create_branch (the GitHub tool, NOT a raw git command) from the
-    repo's default branch. Use a single branch for all changes from this
-    run, named "agent-update-{job_id}".
+2a. If you do not have write access to the original repo (create_branch
+    fails with "Not Found"), call fork_repository first. Then create your
+    branch and push your files to YOUR FORK (owner = your own username).
 
 2b. Use push_files (the github tool, NOT git commit/git push) to commit
     ALL modified files in one push.
 
-2c. call create_pull_request with:
-      - head: the branch from 2a
-      - base: the repo's default branch (usually "main" or "master")
-      - title: a short, accurate summary, e.g.
-        "refactor: modernise logic.py (tested) + document 2 files (untested)"
-      - body: a per-file breakdown. For EVERY file changed, state plainly
-        whether it was (a) refactored with passing tests — say which
-        tests and that they passed, or (b) documentation only — say
-        explicitly "no logic changes, tests not run" and why (missing
-        deps, non-Python language, etc). Do not let the reader infer
-        more confidence than is warranted.
+2c. When opening the pull request:
+    - If you forked: set owner/repo to the ORIGINAL repo (the one you
+      forked FROM, e.g. the repo owner from the original URL), and set
+      head to "your-username:your-branch-name" (with your username as
+      a prefix, separated by a colon). This is what makes the PR a real
+      cross-repository contribution back to the original project,
+      instead of a meaningless PR that only exists inside your own fork.
+    - If you had direct write access (no fork was needed): owner/repo
+      and head/base all refer to the same single repo as normal.
 
 2d. call done with a one-paragraph summary covering every file touched
     and its track (A or B).
