@@ -128,8 +128,7 @@ class MCPClientManager:
     async def call_tool(self, tool_name: str, arguments: dict) -> str:
         """
         Route a tool call to the correct MCP server.
-        Always returns a string — errors are returned as strings too
-        so the agent can read and react to them rather than crashing.
+        Always returns a string
         """
         server_name = self._tool_map.get(tool_name)
         if not server_name:
@@ -143,16 +142,18 @@ class MCPClientManager:
             return f"Error: server '{server_name}' is registered but not running."
 
         try:
-            result = await session.call_tool(tool_name, arguments)
+            result = await asyncio.wait_for(session.call_tool(tool_name, arguments), timeout=45)
 
             # MCP returns a list of content blocks — join all text blocks
-            texts = [
-                block.text
-                for block in result.content
-                if hasattr(block, "text")
-            ]
+            texts = [block.text for block in result.content if hasattr(block, "text")]
             output = "\n".join(texts).strip()
             return output or "(tool returned no output)"
+        
+        except asyncio.TimeoutError:
+            return (
+                f"Error: '{tool_name}' on server '{server_name}' timed out after 45s. "
+                f"The server may be slow or hung — try a different approach or proceed without it."
+            )
 
         except Exception as e:
             return f"Error calling '{tool_name}' on server '{server_name}': {e}"

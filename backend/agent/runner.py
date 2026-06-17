@@ -62,6 +62,8 @@ async def main():
     repo_url = sys.argv[1]
     job_id   = sys.argv[2]
 
+    is_job_finished = False
+
     try:
         await run_agent(
             repo_url=repo_url,
@@ -70,7 +72,11 @@ async def main():
             update_job=_update_job,
             save_file_result=_save_file_result,
         )
+        is_job_finished = True
     except BaseException as e:
+        if is_job_finished:
+            emit_log(job_id, f"[runner] non-fatal cleanup error after completion: {type(e).__name__}: {e}")
+            return
         import traceback
         emit_log(job_id, f"[runner] FATAL: {type(e).__name__}: {e}")
         emit_log(job_id, f"[runner] traceback:\n{traceback.format_exc()}")

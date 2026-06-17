@@ -62,7 +62,9 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
     return [types.TextContent(type="text", text=result)]
 
 def _list_files(path: str) -> str:
-    full_path = os.path.join(REPOS_DIR, path.lstrip("/"))
+    full_path = path
+    if not os.path.isabs(full_path):
+        full_path = os.path.join(REPOS_DIR, full_path)
     if not os.path.exists(full_path):
         return f"path not found: {path}"
     
@@ -84,7 +86,9 @@ def _list_files(path: str) -> str:
 
 
 def _read_file(path: str) -> str:
-    full_path = os.path.join(REPOS_DIR, path.lstrip("/"))
+    full_path = path
+    if not os.path.isabs(full_path):
+        full_path = os.path.join(REPOS_DIR, full_path)
     if not os.path.exists(full_path):
         return f"file not found: {path}"
     
@@ -96,7 +100,9 @@ def _read_file(path: str) -> str:
         return f"error reading file: {e}"
 
 def _write_file(path: str, content: str) -> str:
-    full = os.path.join(REPOS_DIR, path.lstrip("/"))
+    full = path
+    if not os.path.isabs(full):
+        full = os.path.join(REPOS_DIR, full)
     os.makedirs(os.path.dirname(full), exist_ok=True)
     with open(full, "w") as f:
         f.write(content)

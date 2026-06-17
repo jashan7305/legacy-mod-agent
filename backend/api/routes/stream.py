@@ -13,7 +13,12 @@ router = APIRouter(prefix="/api/jobs")
 @router.get("/{job_id}/stream")
 async def stream_logs(job_id: str):
     async def event_generator():
-        r = aioredis.from_url(REDIS_URL)
+        r = aioredis.from_url(
+            REDIS_URL,
+            socket_timeout=None,
+            socket_connect_timeout=20,
+            socket_keepalive=True,
+        )
         pubsub = r.pubsub()
         await pubsub.subscribe(f"job:{job_id}:logs")
 

@@ -178,7 +178,9 @@ def _extract_ast(path: str) -> str:
             f"supported: {supported}"
         )
 
-    full = os.path.join(REPOS_DIR, path.lstrip("/"))
+    full = path
+    if not os.path.isabs(full):
+        full = os.path.join(REPOS_DIR, full)
     if not os.path.exists(full):
         return f"file not found: {path}"
 
@@ -251,7 +253,9 @@ def _extract_ast(path: str) -> str:
 
 
 def _count_lines(path: str) -> str:
-    full = os.path.join(REPOS_DIR, path.lstrip("/"))
+    full = path
+    if not os.path.isabs(full):
+        full = os.path.join(REPOS_DIR, full)
     if not os.path.exists(full):
         return f"file not found: {path}"
     try:
@@ -264,7 +268,9 @@ def _count_lines(path: str) -> str:
 
 def _detect_language(repo_path: str) -> str:
     """Scan a repo and rank languages by file count."""
-    full = os.path.join(REPOS_DIR, repo_path.lstrip("/"))
+    full = repo_path
+    if not os.path.isabs(full):
+        full = os.path.join(REPOS_DIR, full)
     if not os.path.exists(full):
         return f"path not found: {repo_path}"
 

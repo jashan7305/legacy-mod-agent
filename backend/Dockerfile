@@ -7,6 +7,8 @@ RUN apt-get update && apt-get install -y curl git && \
     apt-get install -y nodejs && \
     rm -rf /var/lib/apt/lists/*
 
+RUN npm install -g @modelcontextprotocol/server-github
+
 # Docker CLI is required so bash_server.py can run `docker exec`
 # into the sandbox container from inside this container
 RUN curl -fsSL https://get.docker.com | sh

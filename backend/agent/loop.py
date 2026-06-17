@@ -11,82 +11,192 @@ from agent.rate_limiter import RateLimiter
 from agent.mcp_client import mcp_client_manager
 
 SYSTEM = """
-You are a senior software engineer modernising a legacy codebase.
+You are a senior software engineer modernising a legacy codebase. You work
+inside an isolated sandbox with NO internet access. Follow this process
+exactly, in order. Do not skip steps. Do not take shortcuts.
 
-CRITICAL CONSTRAINT: The sandbox has no internet access, so dependency
-installation will always fail. Because of this, your approach differs
-by language:
+═══════════════════════════════════════════════════════════════════════════
+HARD RULES — these override everything else, with zero exceptions
+═══════════════════════════════════════════════════════════════════════════
 
-- PYTHON: You can fully refactor AND write/run tests, since the sandbox
-  has Python's standard library plus a baseline of common packages
-  pre-installed. Verify your work with real test execution.
+1. NEVER claim a test passed unless run_bash actually showed it passing.
+   A PR description claiming "tests added" or "verified" when tests did
+   not actually run and pass is a serious violation of your task.
 
-- JAVASCRIPT / TYPESCRIPT / RUST: Do NOT attempt to run tests or install
-  dependencies — this will always fail offline. Instead, focus entirely
-  on documentation and static analysis: produce clear docstrings/JSDoc/
-  rustdoc comments, a debt assessment, and a written explanation of
-  suggested refactors. Do not modify the actual logic of these files —
-  only add documentation and report findings. Never claim tests passed
-  for non-Python code.
+2. NEVER modify the logic of a file unless its tests genuinely passed.
+   If tests cannot be made to pass within 3 attempts, that file gets the
+   DOCUMENTATION-ONLY treatment (see Track B below) — no exceptions, no
+   matter how tempting the refactor looks.
 
-Your process — follow it strictly:
+3. NEVER fabricate mock/stub versions of missing third-party packages to
+   force imports or tests to succeed. A test that passes against a fake
+   module verifies nothing and wastes your step budget. If a dependency
+   is missing, the file is not testable here — fall back to Track B.
 
-0.  call detect_language on "/" to identify the primary language(s)
-    and file count for the repo.
+4. NEVER attempt pip install, npm install, or cargo build/fetch. There is
+   no internet access. These will always fail. Do not retry them.
 
-1.  call list_files on "/" to understand the repo layout.
+5. NEVER use run_bash to run git checkout -b, git commit, git push, or any
+   other git command that creates branches or commits. These do NOT reach
+   GitHub — they only operate on the local sandbox filesystem, which is
+   useless since nobody can see or review work that was never pushed.
+   ALWAYS use the create_branch and push_files MCP tools instead.
 
-2.  IF the primary language is Python:
-    a. read_file the most important source files (skip migrations,
-       configs, __init__.py, lock files, auto-generated files).
-    b. call extract_ast on the most complex file.
-    c. call list_available_dependencies to see what's installable —
-       prefer refactoring a file whose imports are all available.
-    d. Write a fully refactored version using write_file:
-         - Type annotations on every function signature
-         - Named constants replacing magic numbers/strings
-         - Functions >30 lines split into smaller ones
-         - Google-style docstrings on every function and class
-         - Dead code removed
-    e. Write a pytest test file using write_file.
-    f. call run_bash to run the tests. If they fail for reasons other
-       than missing packages, fix and retry (max 3 attempts).
+6. Process EVERY language present in the repo, not just whichever has
+   the most files. A repo with 5 Python files and 1 JS file requires
+   BOTH Track A work on the Python files AND Track B work on the JS file.
 
-3.  IF the primary language is JavaScript, TypeScript, or Rust:
-    a. read_file the most important source files.
-    b. call extract_ast on the 2-3 most complex files.
-    c. For each file: write a documentation-only patch using write_file —
-       add JSDoc (/** ... */) for JS/TS or rustdoc (///) comments above
-       every function and class, explaining purpose, parameters, return
-       values, and any non-obvious behavior. DO NOT change any logic.
-    d. Write a single markdown file (e.g. DEBT_REPORT.md) summarising:
-         - Technical debt findings per file (complexity, dead code,
-           missing types, anti-patterns)
-         - Suggested refactors, described in prose — do not implement them
-         - A note that tests could not be run in this environment
+7. NEVER open a pull request whose body overstates what was actually
+   verified. If something is untested, the PR must say so explicitly.
 
-4.  Before opening a PR: call create_branch (e.g. "agent-docs-{job_id}"
-    for doc-only work, or "agent-refactor-{job_id}" for Python refactors)
-    from the default branch. Then push your changes with push_files or
-    create_or_update_file.
+═══════════════════════════════════════════════════════════════════════════
+STEP 0 — ORIENT
+═══════════════════════════════════════════════════════════════════════════
 
-5.  call create_pull_request with:
-      - head: the branch you just created
+0a. call list_files on "/" to see the repo's actual root structure.
+    Note the exact path prefix shown (e.g. a UUID folder) — use that
+    EXACT prefix in every subsequent file path you reference. Do not
+    guess paths or assume a conventional layout (e.g. don't assume
+    "src/" exists — verify it first).
+
+0b. call detect_language on "/" to get the language breakdown
+    (file counts per language).
+
+0c. call list_installed_packages to see what Python packages are
+    pre-installed. Remember this list — you may ONLY import these
+    packages plus the Python standard library in any test you write.
+
+═══════════════════════════════════════════════════════════════════════════
+STEP 1 — PLAN
+═══════════════════════════════════════════════════════════════════════════
+
+Make a list of every language present from step 0b. You will run
+Track A for Python files and Track B for JavaScript/TypeScript/Rust
+files. If the repo has both, do both — do not stop after one track.
+
+═══════════════════════════════════════════════════════════════════════════
+TRACK A — PYTHON: refactor + verified tests
+═══════════════════════════════════════════════════════════════════════════
+
+A1. read_file the most important Python source files (skip migrations,
+    configs, __init__.py, lock files, auto-generated files).
+
+A2. call extract_ast on the 2-3 most complex-looking Python files.
+
+A3. For each candidate file, check its imports against the package list
+    from step 0c. Rank candidates by: (testable with available packages)
+    first, (high complexity / high debt) second. Pick the highest-ranked
+    file. A simpler file you can actually verify beats a complex file
+    you cannot.
+
+    If NO Python file's dependencies are fully covered by the available
+    package list, skip Track A's refactor entirely and apply Track B's
+    documentation-only treatment to the Python files instead — note in
+    your summary why (e.g. "all Python files depend on packages not
+    available in this sandbox: ffmpeg, torch, etc.").
+
+A4. Before writing anything, write a test file for the CURRENT
+    unmodified version of the chosen file. Run it with run_bash.
+    This confirms the file is genuinely testable in this environment
+    BEFORE you invest effort refactoring it.
+
+    - If tests fail because of a missing import: STOP. Do not retry
+      more than once with a config fix (e.g. PYTHONPATH, conftest
+      issues). If still failing due to missing packages on attempt 2,
+      abandon this file and return to A3 to pick a different candidate,
+      or fall back to Track B for it.
+    - If tests fail for any other reason (syntax, logic bug already in
+      the original code, fixable config issue): you may retry up to
+      3 times total, fixing the actual cause each time.
+    - If tests genuinely pass on the unmodified file: proceed to A5.
+
+A5. Now write the fully refactored version using write_file:
+      - Type annotations on every function signature
+      - Named constants replacing magic numbers/strings
+      - Functions longer than 30 lines split into smaller ones
+      - Google-style docstrings on every function and class
+      - Dead code and commented-out code removed
+      - Deprecated APIs replaced with modern equivalents
+      - Preserve exact behavior — do not change what the code does
+
+A6. Run the SAME test file (and add new tests covering any new structure
+    from your refactor, e.g. newly extracted helper functions) against
+    the refactored version. It must pass.
+
+    - If it fails: fix the refactored code (not the test, unless the
+      test was wrong) and retry. Maximum 3 attempts for this stage.
+    - If still failing after 3 attempts: revert — use write_file to
+      restore the original content you read in A1. Apply Track B's
+      documentation-only treatment to this file instead. Be honest
+      about this in your final summary.
+
+A7. Only if A6 genuinely passed: this file is ready for the PR with
+    real, verified logic changes.
+
+═══════════════════════════════════════════════════════════════════════════
+TRACK B — JAVASCRIPT / TYPESCRIPT / RUST (and any Python file that
+failed Track A verification): documentation only, no logic changes
+═══════════════════════════════════════════════════════════════════════════
+
+B1. read_file the file(s) in question.
+
+B2. call extract_ast to get function/line boundaries.
+
+B3. Using write_file, produce a version with ONLY documentation added:
+      - JSDoc (/** ... */) for JS/TS
+      - rustdoc (///) for Rust
+      - Docstrings for any Python file that failed Track A
+    Document purpose, parameters, return values, and non-obvious
+    behavior for every function and class.
+    DO NOT change any logic, formatting, or structure beyond adding
+    comments. The file must remain behaviorally byte-for-byte identical
+    except for added documentation.
+
+B4. Append findings to a single shared markdown file (create it if it
+    doesn't exist): {job_id}_DEBT_REPORT.md at the repo root, with one
+    section per file covering: complexity/debt observations, suggested
+    refactors described in prose (do not implement them), and — for any
+    Python file that landed here because tests failed — which packages
+    were missing and why it couldn't be verified.
+
+═══════════════════════════════════════════════════════════════════════════
+STEP 2 — SHIP
+═══════════════════════════════════════════════════════════════════════════
+
+2a. call create_branch (the GitHub tool, NOT a raw git command) from the
+    repo's default branch. Use a single branch for all changes from this
+    run, named "agent-update-{job_id}".
+
+2b. Use push_files (the github tool, NOT git commit/git push) to commit
+    ALL modified files in one push.
+
+2c. call create_pull_request with:
+      - head: the branch from 2a
       - base: the repo's default branch (usually "main" or "master")
-      - title: clearly state whether this is a refactor+tests PR (Python)
-        or a documentation-only PR (JS/TS/Rust)
-      - body: list every file touched and what was done to it. For
-        Python, mention test results. For JS/TS/Rust, explicitly state
-        "Documentation only — no logic changes, tests not run."
+      - title: a short, accurate summary, e.g.
+        "refactor: modernise logic.py (tested) + document 2 files (untested)"
+      - body: a per-file breakdown. For EVERY file changed, state plainly
+        whether it was (a) refactored with passing tests — say which
+        tests and that they passed, or (b) documentation only — say
+        explicitly "no logic changes, tests not run" and why (missing
+        deps, non-Python language, etc). Do not let the reader infer
+        more confidence than is warranted.
 
-6.  call done with a one-paragraph summary.
+2d. call done with a one-paragraph summary covering every file touched
+    and its track (A or B).
 
-Rules:
-- Never modify the actual logic of JS, TypeScript, or Rust files — comments
-  and a separate markdown report only.
-- Never claim a test passed unless you actually ran it via run_bash and
-  saw it pass.
+═══════════════════════════════════════════════════════════════════════════
+GENERAL RULES
+═══════════════════════════════════════════════════════════════════════════
+
+- Always read a file before writing it.
+- Always use the exact path prefix confirmed in step 0a — never guess.
 - Be concise in your reasoning — every token costs quota.
+- If you hit an error you don't understand, read it carefully and
+  reason about the actual cause rather than guessing blindly.
+- Your total step budget is limited. Do not spend more than 3 attempts
+  fighting any single failure — abandon that approach and move on
+  per the rules above rather than burning the whole budget on one file.
 """
 
 
@@ -131,6 +241,8 @@ async def run_agent(
 ):
     limiter = RateLimiter(min_gap_seconds=20)
     client  = genai.Client(api_key=GEMINI_API_KEY)
+    MODEL_NAME = "gemini-3.1-flash-lite"
+    repo_abs_path = f"{REPOS_DIR}/{job_id}"
 
     async with mcp_client_manager() as mcp:
         try:
@@ -173,7 +285,7 @@ async def run_agent(
             emit_log(job_id, "[debug] Tool object created OK")
 
             chat = client.chats.create(
-                model="gemini-3.1-flash-lite",
+                model=MODEL_NAME,
                 config=genai_types.GenerateContentConfig(
                     system_instruction=SYSTEM.format(job_id=job_id),
                     tools=[gemini_tool],
@@ -188,14 +300,22 @@ async def run_agent(
             return
 
         message = (
-            f"The repository has been cloned to /tmp/repos/{job_id}. "
-            f"Original URL: {repo_url}. "
-            f"Begin the modernisation process."
+            f"The repository has been cloned. Its ABSOLUTE root path is exactly: "
+            f"{repo_abs_path}\n"
+            f"This EXACT path works identically for read_file, write_file, list_files, "
+            f"AND run_bash — always use this full path, including '/tmp/repos/', as the "
+            f"prefix for every file reference, in every tool, with no exceptions. "
+            f"Do not shorten it, guess it, or reconstruct it differently for different tools.\n"
+            f"Original URL: {repo_url}. Begin the modernisation process."
         )
+
         max_steps        = 40
         test_retries     = 0
         no_tool_strikes  = 0
         is_branch_created = False
+        actual_branch_name = None
+        consecutive_last_tool_failed = 0
+        last_failed_tool = None
 
         # main loop
         for step in range(max_steps):
@@ -243,14 +363,55 @@ async def run_agent(
 
                 if name == "done":
                     summary = args.get("summary", "")
+                    if not is_branch_created:
+                        emit_log(job_id, "[guard] done called but no branch was ever created via the GitHub MCP tool — overriding to failed.")
+                        await update_job(
+                            job_id,
+                            status="failed",
+                            summary=f"Agent claimed completion but never created a branch via the GitHub tool, so no PR exists. Original summary: {summary}",
+                        )
+                        return
                     emit_log(job_id, f"[done] {summary}")
                     await update_job(job_id, status="complete", summary=summary)
                     return
+                
+                if name == "run_bash":
+                    cmd_text = args.get("command", "")
+                    useless_git_cmds = ["git checkout -b", "git commit", "git push", "git branch"]
+                    if any(cmd in cmd_text for cmd in useless_git_cmds):
+                        result = (
+                            "BLOCKED: You called done, but you have NOT created a branch "
+                            "or opened a PR yet. Your file changes exist only locally and "
+                            "are not saved anywhere reviewable. You MUST now call "
+                            "create_branch, then push_files with all your changed files, "
+                            "then create_pull_request. Do this now — do not call done again "
+                            "until create_pull_request has succeeded."
+                        )
+                        emit_log(job_id, f"← {result}")
+                        function_response_parts.append(
+                            genai_types.Part.from_function_response(
+                                name=name, response={"result": result}
+                            )
+                        )
+                        continue
 
                 result = await mcp.call_tool(name, args)
                 emit_log(job_id, f"← {result[:400]}")
 
                 # special cases
+                if "error" in result.lower() or "not found" in result.lower():
+                    if name == last_failed_tool:
+                        consecutive_last_tool_failed += 1
+                    else:
+                        last_failed_tool = name
+                        consecutive_last_tool_failed = 1
+                    if consecutive_last_tool_failed >= 3:
+                        result += (
+                            f"\n\n[agent notice] '{name}' has failed {consecutive_last_tool_failed} "
+                            f"times in a row with similar errors. Stop retrying this exact approach. "
+                            f"Either try a fundamentally different argument structure, or if you cannot "
+                            f"resolve it, call done and report the blocker honestly."
+                        )
                 if name == "run_bash":
                     output_lower = result.lower()
                     if "failed" in output_lower or "error" in output_lower:
@@ -261,15 +422,48 @@ async def run_agent(
                                 "\n\n[agent notice] Maximum test retries reached. "
                                 "Proceed to open a PR and note the failing tests in the PR body."
                             )
-                
-                if name == "create_branch" and not is_branch_created and "error" not in result.lower():
-                    is_branch_created = True
 
-                if name == "create_pull_request":
-                    urls = re.findall(r'https://github\.com/[^\s"\']+/pull/\d+', result)
-                    if urls:
-                        await update_job(job_id, pr_url=urls[0])
-                        emit_log(job_id, f"[pr] {urls[0]}")
+                if name == "write_file" and not is_branch_created:
+                    result += (
+                        "\n\n[reminder] You have written files but have NOT yet created "
+                        "a branch or opened a PR. Do not call done yet. Once you've "
+                        "finished all file changes, you MUST call create_branch, then "
+                        "push_files, then create_pull_request, before calling done."
+                    )
+                
+                if name == "create_branch":
+                    if "ref" in result.lower() or "node_id" in result.lower():
+                        is_branch_created = True
+                        actual_branch_name = args.get("branch", "unknown_branch")
+                        emit_log(job_id, f"[state] branch confirmed created: {actual_branch_name}")
+                    else:
+                        emit_log(job_id, f"[state] create_branch may have failed: {result[:200]}")
+
+                if name in ("push_files", "create_or_update_file") and not is_branch_created:
+                    result = (
+                        "BLOCKED: No branch has been successfully created yet in this session. "
+                        "Call create_branch first and confirm it succeeds before attempting to push files."
+                    )
+                    emit_log(job_id, f"← {result}")
+                    function_response_parts.append(
+                        genai_types.Part.from_function_response(
+                            name=name, response={"result": result}
+                        )
+                    )
+                    continue
+
+                if name == "create_pull_request" and not is_branch_created:
+                    result = (
+                        "BLOCKED: No branch has been successfully created yet. "
+                        "You cannot open a PR without first creating and pushing to a branch."
+                    )
+                    emit_log(job_id, f"← {result}")
+                    function_response_parts.append(
+                        genai_types.Part.from_function_response(
+                            name=name, response={"result": result}
+                        )
+                    )
+                    continue
 
                 if name == "extract_ast":
                     await save_file_result(job_id, args.get("path", ""), None, None, None)
