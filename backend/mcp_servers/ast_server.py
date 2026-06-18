@@ -149,6 +149,33 @@ async def list_tools() -> list[types.Tool]:
                 "required": ["repo_path"],
             },
         ),
+        types.Tool(
+            name="report_debt_score",
+            description=(
+                "Report a technical debt score for a file you've analysed. "
+                "Call this once for every file you process, in BOTH Track A and "
+                "Track B, right after you've reasoned about its complexity and "
+                "issues — typically right after extract_ast and reading the file."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Full absolute path to the file being scored.",
+                    },
+                    "debt_score": {
+                        "type": "integer",
+                        "description": "0-100. 0 = pristine, well-structured code. 100 = unmaintainable.",
+                    },
+                    "reasons": {
+                        "type": "string",
+                        "description": "Brief comma-separated list of reasons for the score, e.g. 'no type hints, deeply nested logic, missing tests'.",
+                    },
+                },
+                "required": ["path", "debt_score", "reasons"],
+            },
+        ),
     ]
 
 
@@ -160,13 +187,15 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
         result = _count_lines(arguments["path"])
     elif name == "detect_language":
         result = _detect_language(arguments["repo_path"])
+    elif name == "report_debt_score":
+        result = (
+            f"Recorded debt score {arguments['debt_score']}/100 for "
+            f"{arguments['path']}: {arguments['reasons']}"
+        )
     else:
         result = f"unknown tool: {name}"
 
     return [types.TextContent(type="text", text=result)]
-
-
-# ── tool implementations ──────────────────────────────────────────────────────
 
 def _extract_ast(path: str) -> str:
     ext = os.path.splitext(path)[1].lower()
@@ -297,7 +326,6 @@ def _iter_nodes(node):
     yield node
     for child in node.children:
         yield from _iter_nodes(child)
-
 
 async def main():
     async with stdio_server() as (read_stream, write_stream):

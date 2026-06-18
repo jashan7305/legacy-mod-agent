@@ -1,0 +1,118 @@
+/* ── hero / intro ─────────────────────────────────────────────────────── */
+
+.hero {
+  margin-bottom: 36px;
+}
+
+.hero__eyebrow {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--teal);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+.hero__heading {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  margin: 0 0 10px;
+}
+
+.hero__sub {
+  font-size: 15px;
+  color: var(--subtext);
+  max-width: 540px;
+}
+
+/* ── submit form ──────────────────────────────────────────────────────── */
+
+.submit-form {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 36px;
+}
+
+.submit-form__input {
+  flex: 1;
+  background: var(--mantle);
+  border: 1px solid var(--surface0);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  padding: 12px 14px;
+}
+
+.submit-form__input::placeholder {
+  color: var(--overlay0);
+}
+
+.submit-form__input:focus {
+  border-color: var(--mauve);
+  outline: none;
+}
+
+.submit-form__button {
+  background: var(--green);
+  color: var(--crust);
+  border: none;
+  border-radius: var(--radius-md);
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 14px;
+  padding: 12px 20px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.submit-form__button:hover {
+  background: var(--teal);
+}
+
+.submit-form__button:disabled {
+  background: var(--surface1);
+  color: var(--overlay1);
+  cursor: not-allowed;
+}
+
+/* ── job list ─────────────────────────────────────────────────────────── */
+
+.job-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.job-table__row {
+  border-bottom: 1px solid var(--surface0);
+}
+
+.job-table__row:last-child {
+  border-bottom: none;
+}
+
+.job-table__cell {
+  padding: 14px 0;
+  vertical-align: middle;
+}
+
+.job-table__cell--repo {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text);
+}
+
+.job-table__cell--status {
+  text-align: right;
+  white-space: nowrap;
+  width: 1%;
+}
+
+.job-table__empty {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--overlay0);
+  padding: 24px 0;
+}

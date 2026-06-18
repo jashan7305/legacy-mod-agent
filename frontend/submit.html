@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Legacy Mod Agent</title>
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jetbrains-mono/2.304/css/jetbrains-mono.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/inter-ui/3.19.3/inter.min.css" />
+  <link rel="stylesheet" href="css/shared.css" />
+  <link rel="stylesheet" href="css/submit.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="site-header__inner">
+      <a href="submit.html">
+        <span class="site-header__mark">&gt;_</span>
+        <span class="site-header__title">legacy mod agent</span>
+      </a>
+    </div>
+  </header>
+
+  <main>
+    <div class="hero">
+      <p class="hero__eyebrow">repo in, pull request out</p>
+      <h1 class="hero__heading">Point it at a repo.</h1>
+      <p class="hero__sub">
+        The agent clones it, reads the code, tests what it can verify,
+        documents what it can't, and opens a pull request either way.
+      </p>
+    </div>
+
+    <form class="submit-form" id="job-form">
+      <input
+        type="text"
+        class="submit-form__input"
+        id="repo-url"
+        placeholder="https://github.com/owner/repo"
+        required
+      />
+      <button type="submit" class="submit-form__button" id="submit-btn">Run agent</button>
+    </form>
+
+    <p class="error-text" id="form-error" style="display: none;"></p>
+
+    <h3>Past jobs</h3>
+    <table class="job-table" id="job-table">
+      <tbody id="job-table-body">
+        <tr><td class="job-table__empty">Loading…</td></tr>
+      </tbody>
+    </table>
+  </main>
+
+  <script src="js/submit.js"></script>
+</body>
+</html>

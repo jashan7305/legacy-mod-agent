@@ -1,6 +1,6 @@
 import asyncio
 import json
-import re
+import difflib
 import subprocess
 
 from google import genai
@@ -25,8 +25,7 @@ HARD RULES — these override everything else, with zero exceptions
 
 2. NEVER modify the logic of a file unless its tests genuinely passed.
    If tests cannot be made to pass within 3 attempts, that file gets the
-   DOCUMENTATION-ONLY treatment (see Track B below) — no exceptions, no
-   matter how tempting the refactor looks.
+   DOCUMENTATION-ONLY treatment (see Track B below) — no exceptions.
 
 3. NEVER fabricate mock/stub versions of missing third-party packages to
    force imports or tests to succeed. A test that passes against a fake
@@ -38,16 +37,11 @@ HARD RULES — these override everything else, with zero exceptions
 
 5. NEVER use run_bash to run git checkout -b, git commit, git push, or any
    other git command that creates branches or commits. These do NOT reach
-   GitHub — they only operate on the local sandbox filesystem, which is
-   useless since nobody can see or review work that was never pushed.
-   ALWAYS use the create_branch and push_files MCP tools instead.
+   GitHub. ALWAYS use the create_branch and push_files MCP tools instead.
 
 6. Process EVERY language present in the repo, not just whichever has
    the most files. A repo with 5 Python files and 1 JS file requires
    BOTH Track A work on the Python files AND Track B work on the JS file.
-
-7. NEVER open a pull request whose body overstates what was actually
-   verified. If something is untested, the PR must say so explicitly.
 
 ═══════════════════════════════════════════════════════════════════════════
 STEP 0 — ORIENT
@@ -82,6 +76,9 @@ A1. read_file the most important Python source files (skip migrations,
     configs, __init__.py, lock files, auto-generated files).
 
 A2. call extract_ast on the 2-3 most complex-looking Python files.
+    each file you examine, call report_debt_score with your assessment
+    (0-100) and a brief reason — do this for EVERY file you analyse,
+    whether or not you end up refactoring it.
 
 A3. For each candidate file, check its imports against the package list
     from step 0c. Rank candidates by: (testable with available packages)
@@ -140,7 +137,8 @@ failed Track A verification): documentation only, no logic changes
 
 B1. read_file the file(s) in question.
 
-B2. call extract_ast to get function/line boundaries.
+B2. call extract_ast to get function/line boundaries, then call
+    report_debt_score for this file with your assessment.
 
 B3. Using write_file, produce a version with ONLY documentation added:
       - JSDoc (/** ... */) for JS/TS
@@ -163,24 +161,37 @@ B4. Append findings to a single shared markdown file (create it if it
 STEP 2 — SHIP
 ═══════════════════════════════════════════════════════════════════════════
 
-2a. If you do not have write access to the original repo (create_branch
-    fails with "Not Found"), call fork_repository first. Then create your
-    branch and push your files to YOUR FORK (owner = your own username).
+2a. ALWAYS call fork_repository first, on the ORIGINAL repo from the URL
+    you were given. Do this even if you are unsure whether you already
+    have write access — always fork, no exceptions, no shortcuts.
 
-2b. Use push_files (the github tool, NOT git commit/git push) to commit
-    ALL modified files in one push.
+2b. call create_branch on YOUR FORK (owner = your own account, the one
+    this token belongs to — NOT the original repo's owner). Name the
+    branch EXACTLY: modernization_update_{job_id}
+    Do not modify, shorten, or rename this branch name in any way.
 
-2c. When opening the pull request:
-    - If you forked: set owner/repo to the ORIGINAL repo (the one you
-      forked FROM, e.g. the repo owner from the original URL), and set
-      head to "your-username:your-branch-name" (with your username as
-      a prefix, separated by a colon). This is what makes the PR a real
-      cross-repository contribution back to the original project,
-      instead of a meaningless PR that only exists inside your own fork.
-    - If you had direct write access (no fork was needed): owner/repo
-      and head/base all refer to the same single repo as normal.
+2c. Use push_files (the github tool) to commit
+    ALL modified files in one push, to modernization_update_{job_id} on YOUR FORK.
 
-2d. call done with a one-paragraph summary covering every file touched
+2d. call create_pull_request with:
+      - owner: the ORIGINAL repo's owner (the username from the repo URL
+        you were given at the start — NOT your own account)
+      - repo: the original repo's name
+      - head: "your-username:modernization_update_{job_id}" — your own account
+        name, a colon, then the branch name. This cross-repo format is
+        required; without it the PR will only exist inside your own
+        fork and will never reach the original project.
+      - base: the original repo's default branch (usually "main" or
+        "master")
+      - title: a short, accurate summary of what was done
+      - body: a per-file breakdown. For EVERY file changed, state plainly
+        whether it was (a) refactored with passing tests — say which
+        tests and that they passed, or (b) documentation only — say
+        explicitly "no logic changes, tests not run" and why (missing
+        deps, non-Python language, etc). Do not let the reader infer
+        more confidence than is warranted.
+
+2e. call done with a one-paragraph summary covering every file touched
     and its track (A or B).
 
 ═══════════════════════════════════════════════════════════════════════════
@@ -314,6 +325,7 @@ async def run_agent(
         actual_branch_name = None
         consecutive_last_tool_failed = 0
         last_failed_tool = None
+        original_file_contents: dict[str, str] = {}
 
         # main loop
         for step in range(max_steps):
@@ -415,6 +427,12 @@ async def run_agent(
                             f"Either try a fundamentally different argument structure, or if you cannot "
                             f"resolve it, call done and report the blocker honestly."
                         )
+
+                if name == "read_file":
+                    file_path = args.get("path", "")
+                    if file_path not in original_file_contents:
+                        original_file_contents[file_path] = result
+
                 if name == "run_bash":
                     output_lower = result.lower()
                     if "failed" in output_lower or "error" in output_lower:
@@ -426,7 +444,21 @@ async def run_agent(
                                 "Proceed to open a PR and note the failing tests in the PR body."
                             )
 
-                if name == "write_file" and not is_branch_created:
+                if name == "write_file":
+                    file_path = args.get("path", "")
+                    new_content = args.get("content", "")
+                    old_content = original_file_contents.get(file_path)
+                    if old_content is not None and "Written:" in result:
+                        diff_text = "".join(difflib.unified_diff(
+                            old_content.splitlines(keepends=True),
+                            new_content.splitlines(keepends=True),
+                            fromfile=f"a/{file_path}",
+                            tofile=f"b/{file_path}",
+                            lineterm="",
+                        ))
+                        await save_file_result(job_id, file_path, None, None, diff_text)
+                        emit_log(job_id, f"[state] diff captured for {file_path} ({len(diff_text)} chars)")
+                if not is_branch_created:
                     result += (
                         "\n\n[reminder] You have written files but have NOT yet created "
                         "a branch or opened a PR. Do not call done yet. Once you've "
@@ -470,6 +502,16 @@ async def run_agent(
 
                 if name == "extract_ast":
                     await save_file_result(job_id, args.get("path", ""), None, None, None)
+
+                if name == "report_debt_score":
+                    await save_file_result(
+                        job_id,
+                        args.get("path", ""),
+                        args.get("debt_score"),
+                        args.get("reasons", ""),
+                        None,
+                    )
+                    emit_log(job_id, f"[state] debt score saved: {args.get('path')} = {args.get('debt_score')}/100")
 
                 function_response_parts.append(
                     genai_types.Part.from_function_response(

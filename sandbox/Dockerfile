@@ -5,10 +5,33 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install \
-    pytest pytest-asyncio pytest-cov \
-    requests urllib3 certifi idna charset-normalizer \
-    flask django fastapi pydantic \
-    numpy pandas
+    pytest \
+    pytest-asyncio \
+    pytest-cov \
+    pytest-mock \
+    requests \
+    httpx \
+    aiohttp \
+    flask \
+    django \
+    fastapi \
+    pydantic \
+    sqlalchemy \
+    alembic \
+    redis \
+    numpy \
+    pandas \
+    scipy \
+    scikit-learn \
+    matplotlib \
+    click \
+    typer \
+    python-dotenv \
+    pyyaml \
+    jinja2 \
+    faker \
+    freezegun \
+    responses
 
 WORKDIR /tmp/repos
 CMD ["sleep", "infinity"]
